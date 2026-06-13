@@ -1,9 +1,9 @@
 FROM golang:1.26-alpine AS builder
-WORKDIR /build
-COPY go.mod go.sum ./
+COPY core/ /build/core/
+COPY health-monitor/ /build/health-monitor/
+WORKDIR /build/health-monitor
 RUN go mod download
-COPY . .
-RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o /build/health-monitor ./cmd/module
+RUN CGO_ENABLED=0 go build -o /health-monitor ./cmd/module
 FROM gcr.io/distroless/static-debian12:nonroot
-COPY --from=builder /build/health-monitor /
+COPY --from=builder /health-monitor /
 ENTRYPOINT ["/health-monitor"]
