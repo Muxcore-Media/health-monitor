@@ -9,4 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Initial project scaffold from muxcore-module-starter
+- Health monitor proto definition and generated Go code
+- `ReportHealth` RPC: modules push health state; degraded transitions detected
+- `PublishEvent` RPC: publish health events with type/module/message
+- HTTP health check endpoint on separate port
+- Full test suite: module lifecycle, health reporting, event publishing
+- Contract declaration with `MinCoreVersion: 0.4.0`
+
+### Changed
+
+- Makefile/Dockerfile/docker-compose/systemd: your-module → health-monitor
