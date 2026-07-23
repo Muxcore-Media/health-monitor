@@ -10,7 +10,7 @@
 
 | Contract | Capability | Status |
 |----------|-----------|--------|
-| —        | —         | Planned |
+| —        | `health.monitor` | Current (no formal contract ID) |
 
 ## Breaking Changes
 
