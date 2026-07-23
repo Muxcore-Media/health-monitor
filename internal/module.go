@@ -19,8 +19,8 @@ import (
 
 type Module struct {
 	healthmonitorv1.UnimplementedHealthMonitorServiceServer
-	mu         sync.Mutex
-	moduleHealth map[string]*healthmonitorv1.ModuleHealth
+	mu            sync.Mutex
+	moduleHealth  map[string]*healthmonitorv1.ModuleHealth
 	eventsPublish atomic.Int64
 	degradedCount atomic.Int64
 
@@ -57,11 +57,11 @@ func NewModule(cfg Config) *Module {
 		cfg.GRPCAddr = v
 	}
 	return &Module{
-		id:            cfg.ID,
-		grpcAddr:      cfg.GRPCAddr,
-		httpAddr:      cfg.HTTPAddr,
-		interval:      cfg.Interval,
-		moduleHealth:  make(map[string]*healthmonitorv1.ModuleHealth),
+		id:           cfg.ID,
+		grpcAddr:     cfg.GRPCAddr,
+		httpAddr:     cfg.HTTPAddr,
+		interval:     cfg.Interval,
+		moduleHealth: make(map[string]*healthmonitorv1.ModuleHealth),
 	}
 }
 
