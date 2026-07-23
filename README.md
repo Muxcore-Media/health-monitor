@@ -27,7 +27,7 @@ Modules ──→ ReportHealth ──→ health-monitor
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `HEALTH_MONITOR_GRPC_ADDR` | `:9202` | gRPC listen address |
-| HTTP listen | `:9203` | Health/HTTP listen address |
+| *(none)* | `:9203` | HTTP `/health` listen address (hardcoded default) |
 
 ---
 
