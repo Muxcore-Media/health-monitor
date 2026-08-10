@@ -1,13 +1,14 @@
 {
   "name": "Health Monitor",
   "description": "Aggregated module health monitoring and degradation detection",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "author": "MuxCore",
   "roles": [
     "infrastructure"
   ],
   "capabilities": [
-    "health.monitor"
+    "health.monitor",
+    "settings"
   ],
   "contracts": []
 }

@@ -108,11 +108,11 @@ func (m *Module) Info() contracts.ModuleInfo {
 	return contracts.ModuleInfo{
 		ID:           m.id,
 		Name:         "Health Monitor",
-		Version:      "0.1.4",
+		Version:      "0.1.5",
 		Roles:        []string{"infrastructure"},
 		Description:  "Aggregated module health monitoring and degradation detection",
 		Author:       "MuxCore",
-		Capabilities: []string{contracts.CapabilityHealthMonitor},
+		Capabilities: []string{contracts.CapabilityHealthMonitor, "settings"},
 		HTTPAddr:     m.httpAddr,
 	}
 }
