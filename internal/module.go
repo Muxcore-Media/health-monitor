@@ -18,6 +18,7 @@ import (
 	"github.com/Muxcore-Media/core/pkg/contracts"
 	healthmonitorv1 "github.com/Muxcore-Media/core/proto/gen/muxcore/healthmonitor/v1"
 	"github.com/Muxcore-Media/core/sdk/go/client"
+	modulesdk "github.com/Muxcore-Media/core/sdk/go/module"
 )
 
 const maxRecentEvents = 50
@@ -107,7 +108,7 @@ func (m *Module) Info() contracts.ModuleInfo {
 	return contracts.ModuleInfo{
 		ID:           m.id,
 		Name:         "Health Monitor",
-		Version:      "0.1.3",
+		Version:      "0.1.4",
 		Roles:        []string{"infrastructure"},
 		Description:  "Aggregated module health monitoring and degradation detection",
 		Author:       "MuxCore",
@@ -126,7 +127,7 @@ func (m *Module) Init(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("listen HTTP %s: %w", m.httpAddr, err)
 	}
-	slog.Info("health-monitor initialized", "grpc", m.grpcAddr, "http", m.httpAddr, "interval", m.interval)
+	slog.Info("health-monitor initialized", "grpc", m.grpcAddr, "http", m.httpAddr, "interval", m.getInterval())
 	return nil
 }
 
@@ -138,6 +139,7 @@ func (m *Module) Start(ctx context.Context) error {
 
 	m.grpcSrv = grpc.NewServer()
 	healthmonitorv1.RegisterHealthMonitorServiceServer(m.grpcSrv, m)
+	modulesdk.RegisterSettings(m.grpcSrv, m.id, m)
 	go func() {
 		slog.Info("health-monitor gRPC started", "addr", m.grpcAddr)
 		if err := m.grpcSrv.Serve(m.grpcLis); err != nil {
@@ -274,20 +276,21 @@ func (m *Module) appendEventLocked(ev healthEvent) {
 }
 
 func (m *Module) staleLoop(ctx context.Context) {
-	ticker := time.NewTicker(m.interval)
-	defer ticker.Stop()
 	for {
+		d := m.getInterval()
+		timer := time.NewTimer(d)
 		select {
 		case <-ctx.Done():
+			timer.Stop()
 			return
-		case <-ticker.C:
+		case <-timer.C:
 			m.markStale()
 		}
 	}
 }
 
 func (m *Module) markStale() {
-	cutoff := time.Now().UTC().Add(-2 * m.interval)
+	cutoff := time.Now().UTC().Add(-2 * m.getInterval())
 	var fanout []healthEvent
 	m.mu.Lock()
 	var stale int64
