@@ -1,6 +1,11 @@
 # Changelog
 
 
+## [0.1.4] — 2026-08-10
+
+### Added
+- SettingsProvider mesh (`RegisterSettings`) for live `poll_interval` updates.
+
 ## [0.1.3] — 2026-08-10
 
 ### Fixed
