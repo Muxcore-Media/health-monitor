@@ -162,7 +162,7 @@ func TestStatusHTTP(t *testing.T) {
 	if err := m.Start(ctx); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
-	defer m.Stop(ctx)
+	defer func() { _ = m.Stop(ctx) }()
 
 	_, _ = m.ReportHealth(ctx, &healthmonitorv1.ReportHealthRequest{
 		Modules: []*healthmonitorv1.ModuleHealth{
@@ -175,7 +175,7 @@ func TestStatusHTTP(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET /status: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != 200 {
 		t.Fatalf("status code %d", resp.StatusCode)
 	}
