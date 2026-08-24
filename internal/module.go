@@ -171,7 +171,7 @@ func (m *Module) Stop(ctx context.Context) error {
 		_ = m.httpSrv.Shutdown(ctx)
 	}
 	if m.mc != nil {
-		m.mc.Close()
+		_ = m.mc.Close()
 		m.mc = nil
 	}
 	slog.Info("health-monitor stopped")
@@ -365,16 +365,16 @@ type statusModule struct {
 }
 
 type statusResponse struct {
-	Status         string         `json:"status"`
-	Modules        []statusModule `json:"modules"`
-	ModuleCount    int            `json:"module_count"`
-	DegradedCount  int64          `json:"degraded_transitions"`
-	StaleCount     int64          `json:"stale_count"`
-	EventsPublish  int64          `json:"events_published"`
-	MeshPublished  int64          `json:"mesh_published"`
-	RecentEvents   []healthEvent  `json:"recent_events"`
-	Interval       string         `json:"interval"`
-	StaleAfter     string         `json:"stale_after"`
+	Status        string         `json:"status"`
+	Modules       []statusModule `json:"modules"`
+	ModuleCount   int            `json:"module_count"`
+	DegradedCount int64          `json:"degraded_transitions"`
+	StaleCount    int64          `json:"stale_count"`
+	EventsPublish int64          `json:"events_published"`
+	MeshPublished int64          `json:"mesh_published"`
+	RecentEvents  []healthEvent  `json:"recent_events"`
+	Interval      string         `json:"interval"`
+	StaleAfter    string         `json:"stale_after"`
 }
 
 func (m *Module) snapshot() statusResponse {
