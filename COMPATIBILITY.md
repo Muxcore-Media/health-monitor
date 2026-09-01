@@ -4,13 +4,13 @@
 
 | Module Version | Core Version | Status |
 |----------------|-------------|--------|
-| v0.1.0         | v0.4.0+     | Current |
+| v0.1.6         | v0.5.8+     | Current |
 
 ## Contracts
 
 | Contract | Capability | Status |
 |----------|-----------|--------|
-| —        | `health.monitor` | Current (no formal contract ID) |
+| `HealthMonitor` | `health.monitor` | Current |
 
 ## Breaking Changes
 

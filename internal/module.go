@@ -21,7 +21,12 @@ import (
 	modulesdk "github.com/Muxcore-Media/core/sdk/go/module"
 )
 
-const maxRecentEvents = 50
+const (
+	maxRecentEvents = 50
+	defaultGRPCAddr = "127.0.0.1:9202"
+	defaultHTTPAddr = "127.0.0.1:9203"
+	moduleVersion   = "0.1.6"
+)
 
 type trackedHealth struct {
 	ModuleID string
@@ -34,7 +39,7 @@ type trackedHealth struct {
 type healthEvent struct {
 	EventType string    `json:"event_type"`
 	ModuleID  string    `json:"module_id"`
-	Message   string    `json:"message"`
+	Error     string    `json:"error,omitempty"`
 	At        time.Time `json:"at"`
 }
 
@@ -50,18 +55,20 @@ type Module struct {
 	meshPublishN  atomic.Int64
 	degradedCount atomic.Int64
 	staleCount    atomic.Int64
+	meshConnected atomic.Bool
 
-	mc       *client.Client
-	meshPub  meshPublisher
-	grpcSrv  *grpc.Server
-	grpcLis  net.Listener
-	httpLis  net.Listener
-	httpSrv  *http.Server
-	cancel   context.CancelFunc
-	id       string
-	grpcAddr string
-	httpAddr string
-	interval time.Duration
+	mc         *client.Client
+	meshPub    meshPublisher
+	httpClient *http.Client
+	grpcSrv    *grpc.Server
+	grpcLis    net.Listener
+	httpLis    net.Listener
+	httpSrv    *http.Server
+	cancel     context.CancelFunc
+	id         string
+	grpcAddr   string
+	httpAddr   string
+	interval   time.Duration
 }
 
 type Config struct {
@@ -71,15 +78,20 @@ type Config struct {
 	Interval time.Duration
 }
 
+// DefaultHTTPAddr returns the default loopback HTTP listen address.
+func DefaultHTTPAddr() string {
+	return defaultHTTPAddr
+}
+
 func NewModule(cfg Config) *Module {
 	if cfg.ID == "" {
 		cfg.ID = "health-monitor"
 	}
 	if cfg.GRPCAddr == "" {
-		cfg.GRPCAddr = ":9202"
+		cfg.GRPCAddr = defaultGRPCAddr
 	}
 	if cfg.HTTPAddr == "" {
-		cfg.HTTPAddr = ":9203"
+		cfg.HTTPAddr = defaultHTTPAddr
 	}
 	if cfg.Interval <= 0 {
 		cfg.Interval = 30 * time.Second
@@ -101,6 +113,7 @@ func NewModule(cfg Config) *Module {
 		httpAddr:     cfg.HTTPAddr,
 		interval:     cfg.Interval,
 		moduleHealth: make(map[string]*trackedHealth),
+		httpClient:   &http.Client{Timeout: 5 * time.Second},
 	}
 }
 
@@ -108,12 +121,20 @@ func (m *Module) Info() contracts.ModuleInfo {
 	return contracts.ModuleInfo{
 		ID:           m.id,
 		Name:         "Health Monitor",
-		Version:      "0.1.5",
+		Version:      moduleVersion,
 		Roles:        []string{"infrastructure"},
 		Description:  "Aggregated module health monitoring and degradation detection",
 		Author:       "MuxCore",
 		Capabilities: []string{contracts.CapabilityHealthMonitor, "settings"},
-		HTTPAddr:     m.httpAddr,
+		Contracts: []contracts.ContractDeclaration{
+			{
+				Repo:      "github.com/Muxcore-Media/core/pkg/contracts",
+				Interface: "HealthMonitor",
+				Version:   "v0.5.8",
+			},
+		},
+		MinCoreVersion: "0.5.8",
+		HTTPAddr:       m.httpAddr,
 	}
 }
 
@@ -135,7 +156,7 @@ func (m *Module) Start(ctx context.Context) error {
 	loopCtx, cancel := context.WithCancel(context.Background())
 	m.cancel = cancel
 	go m.staleLoop(loopCtx)
-	go m.dialCore()
+	go m.dialCoreLoop(loopCtx)
 
 	m.grpcSrv = grpc.NewServer()
 	healthmonitorv1.RegisterHealthMonitorServiceServer(m.grpcSrv, m)
@@ -170,29 +191,56 @@ func (m *Module) Stop(ctx context.Context) error {
 	if m.httpSrv != nil {
 		_ = m.httpSrv.Shutdown(ctx)
 	}
+	m.mu.Lock()
 	if m.mc != nil {
 		_ = m.mc.Close()
 		m.mc = nil
 	}
+	m.meshConnected.Store(false)
+	m.mu.Unlock()
 	slog.Info("health-monitor stopped")
 	return nil
 }
 
-func (m *Module) dialCore() {
-	meshAddr := os.Getenv("MUXCORE_GRPC_ADDR")
+func (m *Module) dialCoreLoop(ctx context.Context) {
+	meshAddr := strings.TrimSpace(os.Getenv("MUXCORE_GRPC_ADDR"))
 	if meshAddr == "" {
 		return
 	}
+	delay := time.Second
+	for {
+		if ctx.Err() != nil {
+			return
+		}
+		if m.tryDialCore(meshAddr) {
+			m.meshConnected.Store(true)
+			slog.Info("health-monitor: connected to core mesh", "addr", meshAddr)
+			go m.pollLoop(ctx)
+			return
+		}
+		if err := sleepContext(ctx, delay); err != nil {
+			return
+		}
+		if delay < 30*time.Second {
+			delay *= 2
+		}
+	}
+}
+
+func (m *Module) tryDialCore(meshAddr string) bool {
 	var opts []client.Option
 	if os.Getenv("MUXCORE_INSECURE_DISABLE_TLS") == "true" || os.Getenv("MUXCORE_GRPC_INSECURE") == "true" {
 		opts = append(opts, client.WithInsecure())
 	}
 	c, err := client.Dial(meshAddr, opts...)
 	if err != nil {
-		slog.Warn("health-monitor: dial core failed (mesh fan-out disabled)", "error", err)
-		return
+		slog.Warn("health-monitor: dial core failed", "error", err)
+		return false
 	}
 	m.mu.Lock()
+	if m.mc != nil {
+		_ = m.mc.Close()
+	}
 	m.mc = c
 	if m.meshPub == nil {
 		m.meshPub = func(ctx context.Context, eventType, source string, payload []byte) error {
@@ -200,10 +248,27 @@ func (m *Module) dialCore() {
 		}
 	}
 	m.mu.Unlock()
-	slog.Info("health-monitor: connected to core mesh", "addr", meshAddr)
+	return true
+}
+
+func sleepContext(ctx context.Context, d time.Duration) error {
+	if d <= 0 {
+		return nil
+	}
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-t.C:
+		return nil
+	}
 }
 
 func (m *Module) Health(ctx context.Context) error {
+	if strings.TrimSpace(os.Getenv("MUXCORE_GRPC_ADDR")) != "" && !m.meshConnected.Load() {
+		return fmt.Errorf("not connected to core mesh")
+	}
 	return nil
 }
 
@@ -229,26 +294,32 @@ func (m *Module) ReportHealth(ctx context.Context, req *healthmonitorv1.ReportHe
 			Stale:    false,
 		}
 		m.moduleHealth[id] = entry
-		if ok && prev.State == "running" && state == "degraded" {
+
+		if state == "degraded" && (!ok || (prev.State != "degraded" && prev.State != "stale")) {
 			m.degradedCount.Add(1)
 			slog.Warn("module degraded", "module", id, "error", h.GetError())
 			ev := healthEvent{
-				EventType: "module.degraded",
+				EventType: contracts.EventModuleDegraded,
 				ModuleID:  id,
-				Message:   h.GetError(),
+				Error:     h.GetError(),
 				At:        now,
 			}
 			m.appendEventLocked(ev)
 			fanout = append(fanout, ev)
 		}
-		if ok && prev.Stale && !entry.Stale {
-			slog.Info("module health refreshed", "module", id, "state", state)
+		if ok && state == "running" && (prev.State == "degraded" || prev.State == "stale" || prev.Stale) {
+			slog.Info("module recovered", "module", id)
+			ev := healthEvent{
+				EventType: contracts.EventModuleRecovered,
+				ModuleID:  id,
+				At:        now,
+			}
+			m.appendEventLocked(ev)
+			fanout = append(fanout, ev)
 		}
 	}
 	m.mu.Unlock()
-	for _, ev := range fanout {
-		m.fanOutMesh(ctx, ev)
-	}
+	m.processEvents(ctx, fanout)
 	return &healthmonitorv1.ReportHealthResponse{Status: "ok"}, nil
 }
 
@@ -257,15 +328,24 @@ func (m *Module) PublishEvent(ctx context.Context, req *healthmonitorv1.PublishE
 	ev := healthEvent{
 		EventType: req.GetEventType(),
 		ModuleID:  req.GetModuleId(),
-		Message:   req.GetMessage(),
+		Error:     req.GetMessage(),
 		At:        time.Now().UTC(),
 	}
 	m.mu.Lock()
 	m.appendEventLocked(ev)
 	m.mu.Unlock()
-	slog.Info("health event", "type", ev.EventType, "module", ev.ModuleID, "message", ev.Message)
-	m.fanOutMesh(ctx, ev)
+	slog.Info("health event", "type", ev.EventType, "module", ev.ModuleID, "error", ev.Error)
+	m.processEvents(ctx, []healthEvent{ev})
 	return &healthmonitorv1.PublishEventResponse{Status: "ok"}, nil
+}
+
+func (m *Module) processEvents(ctx context.Context, events []healthEvent) {
+	for _, ev := range events {
+		m.fanOutMesh(ctx, ev)
+		if ev.EventType == contracts.EventModuleDegraded || ev.EventType == contracts.EventModuleStale {
+			m.notifyOperator(ctx, ev)
+		}
+	}
 }
 
 func (m *Module) appendEventLocked(ev healthEvent) {
@@ -301,11 +381,12 @@ func (m *Module) markStale() {
 				if h.State != "stale" {
 					prev := h.State
 					h.State = "stale"
+					errMsg := fmt.Sprintf("no report since %s", h.LastSeen.Format(time.RFC3339))
 					slog.Warn("module health stale", "module", id, "previous", prev, "last_seen", h.LastSeen)
 					ev := healthEvent{
-						EventType: "module.stale",
+						EventType: contracts.EventModuleStale,
 						ModuleID:  id,
-						Message:   fmt.Sprintf("no report since %s", h.LastSeen.Format(time.RFC3339)),
+						Error:     errMsg,
 						At:        time.Now().UTC(),
 					}
 					m.appendEventLocked(ev)
@@ -319,13 +400,37 @@ func (m *Module) markStale() {
 	}
 	m.staleCount.Store(stale)
 	m.mu.Unlock()
-	for _, ev := range fanout {
-		m.fanOutMesh(context.Background(), ev)
-	}
+	m.processEvents(context.Background(), fanout)
 }
 
 func meshEventAllowed(eventType string) bool {
 	return strings.HasPrefix(eventType, "module.") || strings.HasPrefix(eventType, "health.")
+}
+
+func meshPayloadForEvent(ev healthEvent) ([]byte, error) {
+	switch ev.EventType {
+	case contracts.EventModuleDegraded:
+		return json.Marshal(contracts.ModuleDegradedPayload{
+			ModuleID: ev.ModuleID,
+			Error:    ev.Error,
+		})
+	case contracts.EventModuleStale:
+		return json.Marshal(contracts.ModuleStalePayload{
+			ModuleID: ev.ModuleID,
+			Error:    ev.Error,
+		})
+	case contracts.EventModuleRecovered:
+		return json.Marshal(contracts.ModuleRecoveredPayload{
+			ModuleID: ev.ModuleID,
+		})
+	default:
+		return json.Marshal(map[string]any{
+			"module_id":  ev.ModuleID,
+			"error":      ev.Error,
+			"event_type": ev.EventType,
+			"at":         ev.At.Format(time.RFC3339Nano),
+		})
+	}
 }
 
 func (m *Module) fanOutMesh(ctx context.Context, ev healthEvent) {
@@ -338,12 +443,11 @@ func (m *Module) fanOutMesh(ctx context.Context, ev healthEvent) {
 	if pub == nil {
 		return
 	}
-	payload, _ := json.Marshal(map[string]any{
-		"module_id":  ev.ModuleID,
-		"message":    ev.Message,
-		"event_type": ev.EventType,
-		"at":         ev.At.Format(time.RFC3339Nano),
-	})
+	payload, err := meshPayloadForEvent(ev)
+	if err != nil {
+		slog.Warn("health-monitor: marshal mesh payload failed", "type", ev.EventType, "error", err)
+		return
+	}
 	src := m.id
 	if src == "" {
 		src = "health-monitor"
@@ -456,4 +560,16 @@ func (m *Module) SetLastSeenForTest(moduleID string, t time.Time) {
 	if h, ok := m.moduleHealth[moduleID]; ok {
 		h.LastSeen = t
 	}
+}
+
+// SetMeshPublisherForTest injects a mesh publisher stub.
+func (m *Module) SetMeshPublisherForTest(pub meshPublisher) {
+	m.mu.Lock()
+	m.meshPub = pub
+	m.mu.Unlock()
+}
+
+// SetMeshConnectedForTest marks mesh connectivity for Health() tests.
+func (m *Module) SetMeshConnectedForTest(connected bool) {
+	m.meshConnected.Store(connected)
 }

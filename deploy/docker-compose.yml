@@ -18,12 +18,15 @@ services:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "9202"
+      - "9202:9202"
+      - "9203:9203"
     environment:
       MUXCORE_GRPC_ADDR: core:9090
       MUXCORE_INSECURE_DISABLE_TLS: "true"
       MUXCORE_LOG_LEVEL: debug
       MUXCORE_MODULE_ID: health-monitor
+      HEALTH_MONITOR_HTTP_ADDR: 127.0.0.1:9203
+      HEALTH_MONITOR_GRPC_ADDR: 127.0.0.1:9202
     depends_on:
       core:
         condition: service_healthy
