@@ -24,6 +24,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Default gRPC listen address is `127.0.0.1:9202` (override with `HEALTH_MONITOR_GRPC_ADDR`)
+
 ### Added
 
 - Aggregation loop: expire module reports as `stale` after `2 × HEALTH_MONITOR_INTERVAL` (default 30s)
