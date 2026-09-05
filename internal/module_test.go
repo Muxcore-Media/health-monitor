@@ -25,6 +25,7 @@ func TestModuleInfo(t *testing.T) {
 }
 
 func TestModuleLifecycle(t *testing.T) {
+	t.Setenv("MUXCORE_INSECURE_DISABLE_TLS", "true")
 	m := NewModule(Config{GRPCAddr: "127.0.0.1:0", HTTPAddr: "127.0.0.1:0", Interval: time.Hour})
 	ctx := context.Background()
 
@@ -154,6 +155,7 @@ func TestStaleExpiry(t *testing.T) {
 }
 
 func TestStatusHTTP(t *testing.T) {
+	t.Setenv("MUXCORE_INSECURE_DISABLE_TLS", "true")
 	m := NewModule(Config{GRPCAddr: "127.0.0.1:0", HTTPAddr: "127.0.0.1:0", Interval: time.Hour})
 	ctx := context.Background()
 	if err := m.Init(ctx); err != nil {

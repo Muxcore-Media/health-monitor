@@ -14,11 +14,13 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 
 	"github.com/Muxcore-Media/core/pkg/contracts"
 	healthmonitorv1 "github.com/Muxcore-Media/core/proto/gen/muxcore/healthmonitor/v1"
 	"github.com/Muxcore-Media/core/sdk/go/client"
 	modulesdk "github.com/Muxcore-Media/core/sdk/go/module"
+	"github.com/Muxcore-Media/health-monitor/internal/grpctls"
 )
 
 const maxRecentEvents = 50
@@ -78,6 +80,7 @@ func NewModule(cfg Config) *Module {
 	if cfg.GRPCAddr == "" {
 		cfg.GRPCAddr = ":9202"
 	}
+	cfg.GRPCAddr = grpctls.ResolveListenAddr(cfg.GRPCAddr)
 	if cfg.HTTPAddr == "" {
 		cfg.HTTPAddr = ":9203"
 	}
@@ -137,7 +140,21 @@ func (m *Module) Start(ctx context.Context) error {
 	go m.staleLoop(loopCtx)
 	go m.dialCore()
 
-	m.grpcSrv = grpc.NewServer()
+	var grpcOpts []grpc.ServerOption
+	tlsCfg, err := grpctls.ServerConfig()
+	if err != nil {
+		return fmt.Errorf("gRPC TLS: %w", err)
+	}
+	if tlsCfg != nil {
+		grpcOpts = append(grpcOpts, grpc.Creds(credentials.NewTLS(tlsCfg)))
+		slog.Info("health-monitor gRPC TLS enabled", "addr", m.grpcAddr)
+	} else {
+		slog.Warn("health-monitor gRPC listening without TLS (dev only)",
+			"addr", m.grpcAddr,
+			"hint", "unset MUXCORE_INSECURE_DISABLE_TLS for production",
+		)
+	}
+	m.grpcSrv = grpc.NewServer(grpcOpts...)
 	healthmonitorv1.RegisterHealthMonitorServiceServer(m.grpcSrv, m)
 	modulesdk.RegisterSettings(m.grpcSrv, m.id, m)
 	go func() {
