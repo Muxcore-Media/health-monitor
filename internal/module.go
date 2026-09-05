@@ -76,7 +76,7 @@ func NewModule(cfg Config) *Module {
 		cfg.ID = "health-monitor"
 	}
 	if cfg.GRPCAddr == "" {
-		cfg.GRPCAddr = ":9202"
+		cfg.GRPCAddr = "127.0.0.1:9202"
 	}
 	if cfg.HTTPAddr == "" {
 		cfg.HTTPAddr = ":9203"
