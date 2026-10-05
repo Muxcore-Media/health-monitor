@@ -8,6 +8,8 @@ import (
 	"time"
 
 	healthmonitorv1 "github.com/Muxcore-Media/core/proto/gen/muxcore/healthmonitor/v1"
+	modulesdk "github.com/Muxcore-Media/core/sdk/go/module"
+	manifest "github.com/Muxcore-Media/health-monitor"
 )
 
 func TestModuleInfo(t *testing.T) {
@@ -16,8 +18,8 @@ func TestModuleInfo(t *testing.T) {
 	if info.ID == "" {
 		t.Error("module ID must not be empty")
 	}
-	if info.Version == "" {
-		t.Error("module version must not be empty")
+	if info.Version != modulesdk.ManifestVersion(manifest.ManifestJSON) {
+		t.Errorf("version = %q, want manifest version %q", info.Version, modulesdk.ManifestVersion(manifest.ManifestJSON))
 	}
 	if info.HTTPAddr != "127.0.0.1:9203" {
 		t.Errorf("HTTPAddr = %q, want 127.0.0.1:9203", info.HTTPAddr)
