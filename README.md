@@ -27,7 +27,8 @@ Modules ──→ ReportHealth ──→ health-monitor
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `HEALTH_MONITOR_GRPC_ADDR` | `127.0.0.1:9202` | gRPC listen address |
-| *(none)* | `:9203` | HTTP `/health` listen address (hardcoded default) |
+| `HEALTH_MONITOR_HTTP_ADDR` | `127.0.0.1:9203` | HTTP `/health` + `/status` listen address. Non-loopback requires `HEALTH_MONITOR_HTTP_TOKEN`. |
+| `HEALTH_MONITOR_HTTP_TOKEN` | unset (no default) | Bearer token. Required when the HTTP address is not loopback (startup fails closed otherwise); when set, everything except `GET /health` needs `Authorization: Bearer <token>`. |
 
 ---
 

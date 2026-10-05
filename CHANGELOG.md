@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.1.7] - 2026-10-05
+
+
+### Security
+- NFR-SEC-011 / T-M3-07: HTTP listen default is now `127.0.0.1:9203` (was `:9203`). A non-loopback `HEALTH_MONITOR_HTTP_ADDR` requires `HEALTH_MONITOR_HTTP_TOKEN` and the module refuses to start without it. When a token is set, `/status` requires `Authorization: Bearer <token>` (constant-time compare); `GET /health` stays open. No default token.
 
 ## [0.1.5] — 2026-08-10
 

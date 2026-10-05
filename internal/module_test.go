@@ -19,8 +19,8 @@ func TestModuleInfo(t *testing.T) {
 	if info.Version == "" {
 		t.Error("module version must not be empty")
 	}
-	if info.HTTPAddr != ":9203" {
-		t.Errorf("HTTPAddr = %q, want :9203", info.HTTPAddr)
+	if info.HTTPAddr != "127.0.0.1:9203" {
+		t.Errorf("HTTPAddr = %q, want 127.0.0.1:9203", info.HTTPAddr)
 	}
 }
 

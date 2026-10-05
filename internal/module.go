@@ -53,24 +53,27 @@ type Module struct {
 	degradedCount atomic.Int64
 	staleCount    atomic.Int64
 
-	mc       *client.Client
-	meshPub  meshPublisher
-	grpcSrv  *grpc.Server
-	grpcLis  net.Listener
-	httpLis  net.Listener
-	httpSrv  *http.Server
-	cancel   context.CancelFunc
-	id       string
-	grpcAddr string
-	httpAddr string
-	interval time.Duration
+	mc        *client.Client
+	meshPub   meshPublisher
+	grpcSrv   *grpc.Server
+	grpcLis   net.Listener
+	httpLis   net.Listener
+	httpSrv   *http.Server
+	cancel    context.CancelFunc
+	id        string
+	grpcAddr  string
+	httpAddr  string
+	httpToken string
+	interval  time.Duration
 }
 
 type Config struct {
 	ID       string
 	GRPCAddr string
 	HTTPAddr string
-	Interval time.Duration
+	// HTTPToken is the bearer token (env HEALTH_MONITOR_HTTP_TOKEN); required for non-loopback HTTPAddr.
+	HTTPToken string
+	Interval  time.Duration
 }
 
 func NewModule(cfg Config) *Module {
@@ -82,7 +85,7 @@ func NewModule(cfg Config) *Module {
 	}
 	cfg.GRPCAddr = grpctls.ResolveListenAddr(cfg.GRPCAddr)
 	if cfg.HTTPAddr == "" {
-		cfg.HTTPAddr = ":9203"
+		cfg.HTTPAddr = "127.0.0.1:9203"
 	}
 	if cfg.Interval <= 0 {
 		cfg.Interval = 30 * time.Second
@@ -93,6 +96,9 @@ func NewModule(cfg Config) *Module {
 	if v := os.Getenv("HEALTH_MONITOR_HTTP_ADDR"); v != "" {
 		cfg.HTTPAddr = v
 	}
+	if v := strings.TrimSpace(os.Getenv("HEALTH_MONITOR_HTTP_TOKEN")); v != "" {
+		cfg.HTTPToken = v
+	}
 	if v := os.Getenv("HEALTH_MONITOR_INTERVAL"); v != "" {
 		if d, err := time.ParseDuration(v); err == nil && d > 0 {
 			cfg.Interval = d
@@ -102,6 +108,7 @@ func NewModule(cfg Config) *Module {
 		id:           cfg.ID,
 		grpcAddr:     cfg.GRPCAddr,
 		httpAddr:     cfg.HTTPAddr,
+		httpToken:    cfg.HTTPToken,
 		interval:     cfg.Interval,
 		moduleHealth: make(map[string]*trackedHealth),
 	}
@@ -121,6 +128,9 @@ func (m *Module) Info() contracts.ModuleInfo {
 }
 
 func (m *Module) Init(ctx context.Context) error {
+	if err := validateHTTPListen(m.httpAddr, m.httpToken); err != nil {
+		return err
+	}
 	var err error
 	m.grpcLis, err = net.Listen("tcp", m.grpcAddr)
 	if err != nil {
@@ -164,10 +174,7 @@ func (m *Module) Start(ctx context.Context) error {
 		}
 	}()
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("/health", m.handleHealth)
-	mux.HandleFunc("/status", m.handleStatus)
-	m.httpSrv = &http.Server{Handler: mux}
+	m.httpSrv = &http.Server{Handler: m.httpHandler()}
 	go func() {
 		slog.Info("health-monitor HTTP started", "addr", m.httpAddr)
 		if err := m.httpSrv.Serve(m.httpLis); err != nil && err != http.ErrServerClosed {
